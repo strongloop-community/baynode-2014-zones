@@ -68,7 +68,6 @@
       <!-- Any section element inside of this container is displayed as a slide -->
       <div class="slides">
         <section></section>
-        <section data-background="img/terrencephilip.jpg"></section>
 
         <section>
           <h3>Bert Belder</h3>
@@ -92,7 +91,7 @@
             <ul>
               <li>Flow control</li>
               <li>Stability</li>
-              <li>Debuggin / what's going on?</li>
+              <li>Debugging / what's going on inside node?</li>
               <li>Threading</li>
               <li>NPM</li>
             </ul>
@@ -212,11 +211,11 @@ if (error) {
       <section>
         <pre>
           <code class="javascript" data-trim>
-new Zone(function() {
+zone.create(function() {
   http.get('http://nyan.cat', function(err, result) {
     zone.return(result);
   });
-  
+
   setTimeout(function() {
     throw new Error('Take out the trash!');
   }, 9000000);
@@ -233,11 +232,12 @@ new Zone(function() {
       <section>
         <pre>
           <code class="javascript" data-trim>
-new Zone(function() {
+zone.create(function() {
   http.get('http://zombo.com', function(err, result) {
+    if (err) throw err;
     zone.return(result);
   });
-  
+
   setTimeout(function() {
     throw new Error('Take out the trash!');
   }, 9000 * 1e6);
@@ -246,8 +246,7 @@ new Zone(function() {
   console.log(result);
 
 }).catch(function(err) {
-  if (err)
-    throw err;
+  console.log('Not good! ' + err);
 });
           </code>
         </pre>
@@ -256,10 +255,10 @@ new Zone(function() {
         <section>
           <pre>
             <code class="javascript" data-trim>
-new Zone(function() {
+zone.create(function() {
   // Within the outer task.
 
-  new Zone(function() {
+  zone.create(function() {
     // Within a nested task.
     fs.stat(...);
     http.get(...);
@@ -302,17 +301,12 @@ new Zone(function() {
         <section>
           <pre>
             <code class="javascript" data-trim>
-new Zone(function OuterTask() {
-
-  new Zone(function InnerTask() {
-    ...
-  }).setCallback(err, result) {
-    ...
- });
-
-  setTimeout(function() {
-    throw new Error("Dude this is taking too long!");
-  }, 100);
+zone.create(function OuterTask() {
+  zone.create(function InnerTask() {
+    setTimeout(function() {
+      throw new Error("Oh noes!");
+    });
+  });
 
 }).setCallback(function(err, result) {
   throw err;
@@ -321,19 +315,99 @@ new Zone(function OuterTask() {
           </pre>
         </section>
 
-
         <section>
           <pre>
-Error: Dude this is taking too long!
+Error: Oh noes!
+    at Zone.<anonymous> (D:\x\a.js:6:13)
+    at Zone.self.apply (D:\x\node_modules\zone\lib\Zone.js:440:23)
+    at processQueues (D:\x\node_modules\zone\lib\scheduler.js:52:12)
+    at process._tickCallback (node.js:343:11)
+In zone: InnerTask
+    at Zone.create (D:\x\node_modules\zone\lib\Zone.js:519:10)
+    at Zone.OuterTask (D:\x\a.js:3:8)
+    at Zone.create (D:\x\node_modules\zone\lib\Zone.js:519:10)
+    at Object.<anonymous> (D:\x\a.js:2:6)
+    at Module._compile (module.js:449:26)
+    at Object.Module._extensions..js (module.js:467:10)
+    at Module.load (module.js:349:32)
+In zone: OuterTask
+    at Zone.create (D:\x\node_modules\zone\lib\Zone.js:519:10)
+    at Object.<anonymous> (D:\x\a.js:2:6)
+    at Module._compile (module.js:449:26)
+    at Object.Module._extensions..js (module.js:467:10)
+    at Module.load (module.js:349:32)
+    at Function.Module._load (module.js:305:12)
+    at Function.Module.runMain (module.js:490:10)
+    at startup (node.js:124:16)
+    at node.js:807:3
+</pre>
+        </section>
 
-Task: InnerTask (lib/server.js:52:3)
-    at &lt;anonymous&gt; (lib/index.js:15)
-    at invokeTimer (timer.js:110:21)
-    at TimerWrap.ontimeout
+        <section>
+        </section>
 
-Task: OuterTask (lib/index.js:1:13)
-    at Task.&lt;anonymous&gt; (as _complete) (index.js:14:3)
-          </pre>
+        <section>
+<pre><code class="javascript" data-trim>
+// Download 3 websites in parallel
+// Assume we've already thunkified this in a reasonable way.
+
+co(function*() {
+  var p1 = http.get('http://www.google.com/')
+               .pipe(fs.createWriteStream('google.html'));
+  var p2 = http.get('http://www.bing.com/')
+               .pipe(fs.createWriteStream('bing.html'));
+  var p3 = http.get('http://www.yahoo.com/')
+               .pipe(fs.createWriteStream('yahoo.html'));
+
+  yield [p1, p2, p3];
+});
+</code></pre>
+        </section>
+
+        <section>
+<pre><code class="javascript" data-trim>
+// Download 3 websites in parallel
+// Assume we've already thunkified this in a reasonable way.
+
+co(function*() {
+  try {
+    var p1 = http.get('http://www.google.com/')
+                 .pipe(fs.createWriteStream('google.html'));
+    var p2 = http.get('http://www.bing.com/')
+                 .pipe(fs.createWriteStream('bing.html'));
+    var p3 = http.get('http://www.yahoo.com/')
+                 .pipe(fs.createWriteStream('yahoo.html'));
+                 
+    yield [p1, p2, p3];
+
+  } catch (err) {
+    // Clean up the http.get's?
+    // Clean up the write streams?
+  }
+});
+</code></pre>
+        </section>
+
+        <section>
+<pre><code class="javascript" data-trim>
+// Download 3 websites in parallel
+
+try {
+  yield zone.create(function*() {
+    http.get('http://www.google.com/')
+        .pipe(fs.createWriteStream('google.html'));
+    http.get('http://www.bing.com/')
+        .pipe(fs.createWriteStream('bing.html'));
+    http.get('http://www.yahoo.com/')
+        .pipe(fs.createWriteStream('yahoo.html'));
+  });
+
+  // All succesfull.
+
+} catch (err) {
+  // Failure
+}
+</code></pre>
         </section>
 
         <section>
@@ -352,47 +426,12 @@ while (data = yield stream.read())
         </section>
 
         <section>
-          <pre>
-            <code class="javascript" style="font-size: 1em" data-trim>
-server = http.createServer().listen(8000);
+          <h2>Check out zones!</h2>
+          <p>
+            <a href="https://github.com/strongloop/zone">http://github.com/strongloop/zone</a><br><br>
+            <a href="http://strongloop.com/strongblog/announcing-zones-for-node-js/">http://strongloop.com/strongblog/announcing-zones-for-node-js/</a><br><br>
+          </p>
 
-while (true) {
-  // Wait until a new connection comes in.
-  var client = yield server.accept();
-
-  // Doe something with the connection
-  // ... but don't wait until we're done!
-  new Zone(function* ConnectionZone() {
-    
-    // Read data coming off the socket until EOF.
-    new Zone(function* ReadZone() {
-      var data;
-      // Wait until more data arrives.
-      while (data = yield client.read())
-        console.log(data);
-    });
-    
-    // Write hellos to the socket in parallel with reading.
-    new Zone(function* WriteZone() {
-      for (var i = 0; i < 10; i++)
-        client.write('Hello again?!\n');
-    });
-    
-  }).catch((err) => {
-    // If something went wrong, abort the connection.
-    client.abort(500);
-  });
-}
-            </code>
-          </pre>
-        </section>
-
-        <section></section>
-
-        <section data-background="img/wedding1.png"></section>
-        <!-- section data-background="img/wedding2.png"></section -->
-
-        <section>
           <h2>Questions?</h2>
           <p>
             <a href="https://twitter.com/piscisaureus">@piscisaureus</a><br><br>
